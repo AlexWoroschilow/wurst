@@ -9,7 +9,7 @@ use POSIX qw(strftime);
 use Data::Dump qw( dump pp );
 use Getopt::Lucid qw( :all );
 
-# Setup color aliases to 
+# Setup color aliases to
 # colorize console output
 coloralias( 'debug', 'bright_blue' );
 coloralias( 'info',  'bright_green' );
@@ -22,7 +22,8 @@ my @specs = (
  Param("--optimized|-o")->default(0),    #optimized structures only
  Param("--source|-s")->default("rsync://rsync.cmbi.ru.nl/pdb_redo/"),
  Param("--target|-t")->default("/smallfiles/public/no_backup/pdbredo"),
- Param("--response|-r")->default( "./response/rsync_pdbredo_" . time . ".xml" ),
+ Param("--response|-r")
+   ->default( "../wurststatus/xml/rsync_pdbredo_" . time . ".xml" ),
 );
 
 # Parse and validate given parameters
@@ -75,7 +76,7 @@ my $rsync = File::Rsync->new(
 # to write a current response status
 # to notify users about this situation
 $SIG{INT} = $SIG{KILL} = $SIG{TERM} = $SIG{HUP} = sub {
- $template->param( 'date' => strftime( "%F %X", gmtime ) );
+ $template->param( 'date'      => time );
  $template->param( 'status'    => "$?" );
  $template->param( 'error'     => "$!" );
  $template->param( 'command'   => pp( $rsync->lastcmd() ) );
@@ -84,7 +85,7 @@ $SIG{INT} = $SIG{KILL} = $SIG{TERM} = $SIG{HUP} = sub {
 };
 my @test = $rsync->getcmd();
 print( colored( "[rsync_pdbredo] Command line arguments:", 'info' ) );
-print( colored( pp( $test[0] ) . "\n",           'info' ) );
+print( colored( pp( $test[0] ) . "\n",                     'info' ) );
 
 # Run rsync to do an update
 $rsync->exec();
@@ -101,7 +102,7 @@ print( colored( "[rsync_pdbredo] " . join( " ", @errors ), $type ) );
 
 # If we are there, rsync was finished,
 # just write a response
-$template->param( 'date' => strftime( "%F %X", gmtime ) );
+$template->param( 'date'      => time );
 $template->param( 'status'    => pp($status) );
 $template->param( 'error'     => pp(@errors) );
 $template->param( 'command'   => pp( $rsync->lastcmd() ) );

@@ -1,0 +1,14 @@
+{
+    "require": {
+        "silex/silex": "~1.3",
+        "suin/php-rss-writer": "^1.3",
+        "electrolinux/phpquery": "^0.9.6",
+        "symfony/finder": "^2.7",
+        "symfony/filesystem": "^2.7"
+    },
+    "autoload": {
+        "psr-0": {
+            "": "src/"
+        }
+    }
+}
