@@ -1,0 +1,10 @@
+<?xml version="1.1" encoding="UTF-8" ?>
+<response>
+<task>wurst-update</task>
+<date>1444147951</date>
+<status>0</status>
+<log><![CDATA[Di 6. Okt 18:12:31 CEST 2015
+Linux idea 3.18.21-031821-generic #201509020527 SMP Wed Sep 2 05:29:06 UTC 2015 x86_64 x86_64 x86_64 GNU/Linux]]></log>
+<error><![CDATA[Missed file: /opt/SGE6.2u5p2/zbh/common/settings.sh
+/home/sensey/Projects/Wurst/src/wursttemp/wurst_update_vec10n.sh: 50: .: Can't open /opt/SGE6.2u5p2/zbh/common/settings.sh]]></error>
+</response>
