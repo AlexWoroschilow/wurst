@@ -90,11 +90,9 @@ $worker->work(
 		$difference = $requestred - $started;
 
 		$alive = $is_idle && $difference > $timeout;
-		passert( !$alive, "Worker shutted down by timeout: $timeout" );
-
 		# This process should be shutted down only
 		# if there are not tasks for current worker
-		return $alive;
+		return passert( $alive, "Worker shutted down by timeout: $timeout" );
 	  }
 );
 
