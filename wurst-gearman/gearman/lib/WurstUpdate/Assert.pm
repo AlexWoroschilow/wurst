@@ -15,9 +15,9 @@ sub dassert ($ $) {
 sub passert ($ $) {
 	my ( $condition, $message ) = @_;
 	if ( !$condition ) {
-		print $message . "\n";
 		return 0;
 	}
+	print $message . "\n";
 	return 1;
 }
 
