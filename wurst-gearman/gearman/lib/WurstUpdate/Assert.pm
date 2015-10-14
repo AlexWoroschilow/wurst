@@ -5,11 +5,20 @@ use POSIX;
 use File::Slurp;
 use Exporter qw(import);
 
-our @EXPORT_OK = qw(dassert wassert);
+our @EXPORT_OK = qw(dassert wassert passert);
 
 sub dassert ($ $) {
 	my ( $condition, $message ) = @_;
 	($condition) or die($message);
+}
+
+sub passert ($ $) {
+	my ( $condition, $message ) = @_;
+	if ( !$condition ) {
+		print $message . "\n";
+		return 0;
+	}
+	return 1;
 }
 
 sub wassert ($ $) {
