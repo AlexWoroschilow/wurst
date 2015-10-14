@@ -172,14 +172,14 @@ sub shutdown_if_calm {
 my $started = time;
 Danga::Socket->SetLoopTimeout(500);
 Danga::Socket->SetPostLoopCallback( sub {
-		passert( ( my $jobs    = $server->jobs ),    "Server have no jobs" );
-		passert( ( my $clients = $server->clients ), "Server have no clients" );
+		passert( !( my $jobs    = $server->jobs ),    "Server have no jobs" );
+		passert( !( my $clients = $server->clients ), "Server have no clients" );
 
 		if ( !$jobs && !$clients ) {
 			my $current    = time;
 			my $difference = $current - $started;
 
-			return !passert( ( $opt->get_timeout < $difference ), "Server shutdown by timeout" );
+			return passert( ( $opt->get_timeout > $difference ), "Server shutdown by timeout" );
 		}
 		$started = time;
 		return 1;

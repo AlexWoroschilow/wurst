@@ -73,7 +73,7 @@ $worker->work(
 	'stop_if' => sub {
 		my ( $is_idle, $last_job_time ) = @_;
 		my ( $timeout, $requestred, $difference, $alive );
-		passert( !$is_idle, "Worker have no tasks" );
+		passert( $is_idle, "Worker is idle" );
 
 		$timeout    = $opt->get_timeout1;
 		$requestred = time();
