@@ -1,0 +1,4 @@
+mod/lib/x86_64-linux-gnu/perl/5.20.2/Parallel/MPI/Simple.pm
+mod/lib/x86_64-linux-gnu/perl/5.20.2/Parallel/MPI/ic.pl
+mod/lib/x86_64-linux-gnu/perl/5.20.2/auto/Parallel/MPI/Simple/Simple.so
+mod/man/man3/Parallel::MPI::Simple.3pm
