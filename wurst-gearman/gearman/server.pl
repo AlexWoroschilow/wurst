@@ -128,19 +128,19 @@ my @specs = (
 my $opt = Getopt::Lucid->getopt( \@specs );
 $opt->validate( { 'requires' => [] } );
 
-dassert( $opt->get_host,       "Host should be defined" );
-dassert( $opt->get_port,       "Port should be defined" );
-dassert( $opt->get_accept,     "Accept number should be defined" );
-dassert( $opt->get_wakeup,     "Wake up number should be defined" );
-dassert( $opt->get_timeout,    "Timeout should be defined" );
-dassert( $opt->get_configfile, "Config file should be defined" );
+dassert( ( my $host       = $opt->get_host ),       "Host should be defined" );
+dassert( ( my $port       = $opt->get_port ),       "Port should be defined" );
+dassert( ( my $accept     = $opt->get_accept ),     "Accept number should be defined" );
+dassert( ( my $wakeup     = $opt->get_wakeup ),     "Wake up number should be defined" );
+dassert( ( my $configfile = $opt->get_configfile ), "Config file should be defined" );
+dassert( ( my $timeout    = $opt->get_timeout ),    "Server shutdown timeout can not be empty" );
+passert( ( my $pidfile = $opt->get_pidfile ), "Pidfile given" );
 
 # Write server settings wor workers
 # this resource should be available for all workers
 # they whould get a server settings to connect
-my $server_config = join( ":", $opt->get_host, int( $opt->get_port ) );
-file_write_silent( $opt->get_configfile, $server_config );
-file_write_silent( $opt->get_pidfile,    "$$\n" );
+file_write_silent( $configfile,       $host . ":" . int($port) );
+file_write_silent( $opt->get_pidfile, "$$\n" );
 
 # handled manually, so just ignore
 $SIG{'PIPE'} = "IGNORE";
@@ -148,8 +148,8 @@ $SIG{'PIPE'} = "IGNORE";
 my $server = Gearman::Server->new( 'wakeup' => int( $opt->get_wakeup ),
 	'wakeup_delay' => int( $opt->get_wakeup_delay ), );
 
-my $ssock = $server->create_listening_sock( int( $opt->get_port ),
-	'accept_per_loop' => int( $opt->get_accept ) );
+my $ssock = $server->create_listening_sock( int( $port ),
+	'accept_per_loop' => int( $accept ) );
 
 sub shutdown_graceful {
 	if ($graceful_shutdown) {
@@ -172,14 +172,14 @@ sub shutdown_if_calm {
 my $started = time;
 Danga::Socket->SetLoopTimeout(500);
 Danga::Socket->SetPostLoopCallback( sub {
+
 		passert( !( my $jobs    = $server->jobs ),    "Server have no jobs" );
 		passert( !( my $clients = $server->clients ), "Server have no clients" );
 
 		if ( !$jobs && !$clients ) {
 			my $current    = time;
 			my $difference = $current - $started;
-
-			return passert( ( $opt->get_timeout > $difference ), "Server shutdown by timeout" );
+			return passert( ( $timeout > $difference ), "Server shutdown in: " . ( $timeout - $difference ) . " sec" );
 		}
 		$started = time;
 		return 1;
