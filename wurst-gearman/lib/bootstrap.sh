@@ -14,7 +14,7 @@ get_run_id () {
 # for php status-rss stream 
 write_xml_status () {
 
-		echo "<?xml version=\"1.1\" encoding=\"UTF-8\" ?>" > $1;
+	echo "<?xml version=\"1.1\" encoding=\"UTF-8\" ?>" > $1;
 	echo "<response>" >> $1;
 	echo "<task>wurst-update</task>" >> $1;
 	echo "<date>$(date +%s)</date>" >> $1;
@@ -23,7 +23,7 @@ write_xml_status () {
 	echo "<error><![CDATA[$(cat $3)]]></error>" >> $1;
 	echo "</response>" >> $1;
 	
-	kill 0;
+	#	kill 0;
 	
 	exit;
 }

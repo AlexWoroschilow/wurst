@@ -1,6 +1,6 @@
 
 package Gearman::Util;
-use strict;
+no warnings 'deprecated';
 
 use Errno qw(EAGAIN);
 use Time::HiRes qw();

@@ -115,7 +115,7 @@ sub new {
 
 sub debug {
     my ($self, $msg) = @_;
-    #warn "$msg\n";
+    warn "$msg\n";
 }
 
 =head2 create_listening_sock

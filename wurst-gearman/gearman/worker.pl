@@ -5,48 +5,83 @@ use warnings;
 use FindBin;
 use lib "$FindBin::Bin/lib";
 
+use JSON;
 use Gearman::Worker;
-use Storable qw( thaw );
+use Storable qw( freeze thaw retrieve);
+use Storable qw( freeze );
+
 use List::Util qw( sum );
 use Getopt::Lucid qw( :all );
+use File::Slurp;
+use WurstUpdate::Assert qw(dassert wassert);
+use WurstUpdate::Utils qw(pdb_write_bin);
+
+use Data::Dump qw( dump pp );
+
+my ( @specs, $opt, $worker, $started );
 
 # Setup available command line parameters
 # with validation, default values and so on
-my @specs = (
-	Param("--server")->default("127.0.0.1:7003"),    # server address
-	Param("--timeout1")->default(80),                # timeout without server
+@specs = (
+	Param("--configfile")->default("$FindBin::Bin/../input/server.conf"),
+	Param("--timeout1")->default(80),    # timeout without server
 	Param("--timeout2")->default(30),    # timeout with server but without tasks
-
 );
 
 # Parse and validate given parameters
-my $opt = Getopt::Lucid->getopt( \@specs )->validate;
+$opt = Getopt::Lucid->getopt( \@specs );
+$opt->validate( {} );
+dassert( $opt->get_configfile, "File with server config should not be empty" );
+dassert( $opt->get_timeout1,   "Timeout to shutdown withou server should be defined" );
+dassert( $opt->get_timeout2,   "Tmieout to shutdown withou tasks should be defined" );
 
-my $worker = Gearman::Worker->new;
-$worker->job_servers( $opt->get_server );
-
-$worker->register_function(
-	'pdb_to_bin' => sub {
-		$_[0]->arg;
-	}
-);
-
-$worker->register_function(
-	'bin_to_vec' => sub {
-		$_[0]->arg;
-	}
-);
+$worker = Gearman::Worker->new;
+$worker->job_servers( read_file( $opt->get_configfile ) );
 
 
-my $worker_started_at = time();
+my $json = JSON->new;
 
+# Define worker function to convert cluster
+# of pdb structures to binary files
+$worker->register_function( "cluster_to_bin" => sub {
+	my ( $cluster_ref, $chain_ref, $src, $top, $dst, $min ) = @{ $json->decode($_[0]->arg) };
+	dassert((my @chain = @{ $chain_ref }), "Cluster can not be empty");
+	dassert((my @cluster = @{ $cluster_ref }), "Cluster can not be empty");
+
+		for ( my $i = 0 ; $i < @cluster ; $i++ ) {
+			print "Fail: $cluster[$i]\n" if !pdb_write_bin( {
+					'source'      => $src,
+					'source_top'  => $top,
+					'destination' => $dst,
+					'code'        => $cluster[$i],
+					'chain'       => $chain[$i],
+					'minsize'     => $min,
+					'gunzip'      => [],
+			} );
+		}
+} );
+
+# Define worker function to convert
+# single pdb structure to vector file
+$worker->register_function( "bin_to_vec" => sub {
+	my ( $pdbs_ref, $src, $top, $dst) = @{ $json->decode($_[0]->arg) };
+	dassert((my @pdbs = @{ $pdbs_ref }), "Pdb codes list can not be empty");
+
+
+} );
+
+
+
+#
+$started = time();
 $worker->work(
 	'stop_if' => sub {
 		my ( $is_idle, $last_job_time ) = @_;
+		my ( $timeout, $requestred, $difference, $alive );
+		wassert( !$is_idle, "Worker have no tasks" );
 
-		my $worker_requested_at = time();
-
-		my $worker_timeout = $opt->get_timeout1;
+		$timeout    = $opt->get_timeout1;
+		$requestred = time();
 
 		# We have to use different timeouts
 		# for worker without server and without
@@ -54,14 +89,17 @@ $worker->work(
 		# pause. Server can be started after some pause too
 		# But this should not tage a lot of time
 		if ( length $last_job_time ) {
-			$worker_started_at = $last_job_time;
-			$worker_timeout    = $opt->get_timeout2;
+			$started = $last_job_time;
+			$timeout = $opt->get_timeout2;
 		}
-		my $difference = $worker_requested_at - $worker_started_at;
+		$difference = $requestred - $started;
+
+		$alive = $is_idle && $difference > $timeout;
+		wassert( !$alive, "Worker shutted down by timeout: $timeout" );
 
 		# This process should be shutted down only
 		# if there are not tasks for current worker
-		return ( $is_idle && $difference > $worker_timeout );
-	}
+		return $alive;
+	  }
 );
 

@@ -2,11 +2,11 @@
 
 =head1 NAME
 
-gearmand - Gearman client/worker connector.
+server.pl - Gearman client/worker connector.
 
 =head1 SYNOPSIS
 
- gearmand --daemon
+ server.pl
 
 =head1 DESCRIPTION
 
@@ -17,11 +17,6 @@ daemonization.
 =head1 OPTIONS
 
 =over
-
-=item --daemonize / -d
-
-Make the daemon run in the background (good for init.d scripts, bad
-for running under daemontools/supervise).
 
 =item --port=7003 / -p 7003
 
@@ -95,112 +90,105 @@ L<Gearman::Client::Async>
 package Gearmand;
 use strict;
 use warnings;
-BEGIN {
-    $^P = 0x200;  # Provide informative names to anonymous subroutines
-}
+
 use FindBin;
 use lib "$FindBin::Bin/lib";
-use Gearman::Server;
 
-use Getopt::Long;
 use Carp;
-use Danga::Socket 1.52;
-use IO::Socket::INET;
 use POSIX ();
+use File::Slurp;
+use Getopt::Long;
+use Scalar::Util();
 use Gearman::Util;
-use vars qw($DEBUG);
-use Scalar::Util ();
+use Sys::Hostname;
+use Gearman::Server;
+use IO::Socket::INET;
+use Danga::Socket 1.52;
+use Getopt::Lucid qw( :all );
+use WurstUpdate::Utils qw(file_write_silent);
+use WurstUpdate::Assert qw(dassert wassert);
 
-$DEBUG = 0;
-
-my (
-    $daemonize,
-    $nokeepalive,
-    $notify_pid,
-    $opt_pidfile,
-    $accept,
-    $wakeup,
-    $wakeup_delay,
-   );
-my $conf_port = 7003;
-
-Getopt::Long::GetOptions(
-                         'd|daemonize'    => \$daemonize,
-                         'p|port=i'       => \$conf_port,
-                         'debug=i'        => \$DEBUG,
-                         'pidfile=s'      => \$opt_pidfile,
-                         'accept=i'       => \$accept,
-                         'wakeup=i'       => \$wakeup,
-                         'wakeup-delay=f' => \$wakeup_delay,
-                         'notifypid|n=i'  => \$notify_pid,  # for test suite only.
-                         );
-
-daemonize() if $daemonize;
-
-# true if we've closed listening socket, and we're waiting for a
-# convenient place to kill the process
 our $graceful_shutdown = 0;
 
-$SIG{'PIPE'} = "IGNORE";  # handled manually
+# Setup available command line parameters
+# with validation, default values and so on
+my @specs = (
+	Param("--host")->default(hostname),
+	Param("--port")->default(7003)->valid(qr/\d+/),
+	Param("--pidfile")->default(""),
+	Param("--debug")->default(0)->valid(qr/\d+/),
+	Param("--accept")->default(10)->valid(qr/\d+/),
+	Param("--wakeup")->default(3),
+	Param("--wakeup_delay")->default(1)->valid(qr/\d+/),
+	Param("--timeout")->default(20)->valid(qr/\d+/),
+	Param("--configfile")->default("$FindBin::Bin/../input/server.conf"),
+);
 
-my $server = Gearman::Server->new(
-                                  wakeup          => $wakeup,
-                                  wakeup_delay    => $wakeup_delay,
-             );
-my $ssock  = $server->create_listening_sock($conf_port, accept_per_loop => $accept);
+# Parse and validate given parameters
+my $opt = Getopt::Lucid->getopt( \@specs );
+$opt->validate( { 'requires' => [] } );
 
-if ($opt_pidfile) {
-    open my $fh, '>', $opt_pidfile or die "Could not open $opt_pidfile: $!";
-    print $fh "$$\n";
-    close $fh;
-}
+dassert( $opt->get_host,       "Host should be defined" );
+dassert( $opt->get_port,       "Port should be defined" );
+dassert( $opt->get_accept,     "Accept number should be defined" );
+dassert( $opt->get_wakeup,     "Wake up number should be defined" );
+dassert( $opt->get_timeout,    "Timeout should be defined" );
+dassert( $opt->get_configfile, "Config file should be defined" );
+
+# Write server settings wor workers
+# this resource should be available for all workers
+# they whould get a server settings to connect
+my $server_config = join( ":", $opt->get_host, int($opt->get_port) );
+file_write_silent( $opt->get_configfile, $server_config );
+file_write_silent( $opt->get_pidfile,    "$$\n" );
+
+# handled manually, so just ignore
+$SIG{'PIPE'} = "IGNORE";
+
+my $server = Gearman::Server->new( 'wakeup' => int($opt->get_wakeup),
+	'wakeup_delay' => int($opt->get_wakeup_delay), );
+
+my $ssock = $server->create_listening_sock( int($opt->get_port),
+	'accept_per_loop' => int($opt->get_accept) );
 
 sub shutdown_graceful {
-    return if $graceful_shutdown;
+	if ($graceful_shutdown) {
+		return;
+	}
 
-    my $ofds = Danga::Socket->OtherFds;
-    delete $ofds->{fileno($ssock)};
-    $ssock->close;
-    $graceful_shutdown = 1;
-    shutdown_if_calm();
+	my $ofds = Danga::Socket->OtherFds;
+	delete $ofds->{ fileno($ssock) };
+	$ssock->close;
+	$graceful_shutdown = 1;
+	shutdown_if_calm();
 }
 
 sub shutdown_if_calm {
-    exit 0 unless $server->jobs_outstanding;
+	if ( !$server->jobs_outstanding ) {
+		exit 0;
+	}
 }
 
-sub daemonize {
-    my ($pid, $sess_id, $i);
+my $started = time;
+Danga::Socket->SetLoopTimeout(500);
+Danga::Socket->SetPostLoopCallback( sub {
+		wassert( ( my $jobs    = $server->jobs ),    "Server have no jobs" );
+		wassert( ( my $clients = $server->clients ), "Server have no clients" );
 
-    ## Fork and exit parent
-    if ($pid = fork) { exit 0; }
+		if ( !$jobs && !$clients ) {
+			my $current    = time;
+			my $difference = $current - $started;
 
-    ## Detach ourselves from the terminal
-    croak "Cannot detach from controlling terminal"
-        unless $sess_id = POSIX::setsid();
+			if ( $opt->get_timeout < $difference ) {
+				$server->debug("Exit by timeout.");
+				return 0;
+			}
+			return 1;
+		}
+		$started = time;
+		return 1;
+} );
 
-    ## Prevent possibility of acquiring a controling terminal
-    $SIG{'HUP'} = 'IGNORE';
-    if ($pid = fork) { exit 0; }
-
-    ## Change working directory
-    chdir "/";
-
-    ## Clear file creation mask
-    umask 0;
-
-    ## Close open file descriptors
-    close(STDIN);
-    close(STDOUT);
-    close(STDERR);
-
-    ## Reopen stderr, stdout, stdin to /dev/null
-    open(STDIN,  "+>/dev/null");
-    open(STDOUT, "+>&STDIN");
-    open(STDERR, "+>&STDIN");
-}
-
-kill 'USR1', $notify_pid if $notify_pid;
 Danga::Socket->EventLoop();
 
 # Local Variables:
