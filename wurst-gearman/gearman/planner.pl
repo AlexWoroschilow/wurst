@@ -11,7 +11,7 @@ use Gearman::Client;
 use Storable qw( freeze );
 use Getopt::Lucid qw( :all );
 use Data::Dump qw( dump pp );
-use WurstUpdate::Assert qw(dassert wassert);
+use Assert qw(dassert wassert);
 use WurstUpdate::Utils qw(cluster_read_to cluster_each file_line_each);
 
 my ( @specs, $opt, $client, $tasks, $first, $last, @acq, @chain, $json );
@@ -48,39 +48,70 @@ dassert( scalar(@chain), "Clusters chain array can not be empty" );
 $json = JSON->new;
 
 cluster_each( \@acq, \@chain, sub {
-		my ( @acq, @chain ) = @_;
+		my ( $acq, $chain ) = @_;
 
-		my @options = [@acq, @chain, "/src", "/top", "/dst", "12"];
-		
-		$tasks->add_task( "cluster_to_bin" => $json->encode(@options), {
-				on_fail => sub {
-					print "Fail cluster_to_bin\n";
-				},
-				on_complete => sub {
-				  }
-		} );
+		for ( my $i = 0 ; $i < @$acq ; $i++ ) {
+
+			my $pdb   = $$acq[$i];
+			my $chain = $$chain[$i];
+
+			# This parameters should be pass through
+			# a network, it may be http or something else
+			# we do not know and can not be sure
+			# so just encode to json with respect to order
+			my $options = $json->encode(
+				[ $pdb, $chain, "/src", "/top", "/dst", "12" ]
+			);
+
+			$tasks->add_task( "pdb_to_bin" => $options, {
+					on_fail => sub {
+
+						# This is totally wrong situation
+						# write a report to std error about it
+						# for more details see logs from worker
+						wassert( 0, "pdb_to_bin failed for: $pdb" );
+					},
+					on_complete => sub {
+
+						# Response from worker should be 1
+						# if we got 0, than something was wrong
+						# write a warning about it
+						# for server support peope
+						# we should not write here a success status
+						# because there are a 300 000 structures
+						# and only errors are interested
+						wassert( ( my $response = ${ $_[0] } ), "pdb_to_bin failed for: $pdb" );
+					  }
+			} );
+		}
 } );
 
 $tasks->wait;
-
-file_line_each( $opt->get_list1, sub {
-		my (@line) = @_;
-
-		my @options = [@line,"/src", "/top", "/dst", "12"];
-
-
-		$tasks->add_task( "bin_to_vec" => $json->encode(@options), {
-				on_fail => sub {
-					print "Fail:\n"; dump(@line);
-				},
-				on_complete => sub {
-				},
-		} );
-	  }
-);
-
-$tasks->wait;
 exit;
+
+#file_line_each( $opt->get_list1, sub {
+#		my (@line) = @_;
+#
+#		# This parameters should be pass through
+#		# a network, it may be http or something else
+#		# we do not know and can not be sure
+#		# so just encode to json with respect to order
+#		my @options = $json->encode(
+#			[ @line, "/src", "/top", "/dst", "12" ]
+#		);
+#
+#		$tasks->add_task( "bin_to_vec" => $json->encode(@options), {
+#				on_fail => sub {
+#					print "Fail:\n"; dump(@line);
+#				},
+#				on_complete => sub {
+#				},
+#		} );
+#	  }
+#);
+#
+#$tasks->wait;
+
 #
 #file_line_each( $opt->get_list2, sub {
 #		my (@line) = @_;

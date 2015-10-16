@@ -105,8 +105,8 @@ use Gearman::Server;
 use IO::Socket::INET;
 use Danga::Socket 1.52;
 use Getopt::Lucid qw( :all );
+use Assert qw(dassert wassert passert);
 use WurstUpdate::Utils qw(file_write_silent);
-use WurstUpdate::Assert qw(dassert wassert passert);
 
 our $graceful_shutdown = 0;
 
@@ -148,8 +148,8 @@ $SIG{'PIPE'} = "IGNORE";
 my $server = Gearman::Server->new( 'wakeup' => int( $opt->get_wakeup ),
 	'wakeup_delay' => int( $opt->get_wakeup_delay ), );
 
-my $ssock = $server->create_listening_sock( int( $port ),
-	'accept_per_loop' => int( $accept ) );
+my $ssock = $server->create_listening_sock( int($port),
+	'accept_per_loop' => int($accept) );
 
 sub shutdown_graceful {
 	if ($graceful_shutdown) {
@@ -172,11 +172,7 @@ sub shutdown_if_calm {
 my $started = time;
 Danga::Socket->SetLoopTimeout(500);
 Danga::Socket->SetPostLoopCallback( sub {
-
-		passert( !( my $jobs    = $server->jobs ),    "Server have no jobs" );
-		passert( !( my $clients = $server->clients ), "Server have no clients" );
-
-		if ( !$jobs && !$clients ) {
+		if ( !$server->jobs && !$server->clients ) {
 			my $current    = time;
 			my $difference = $current - $started;
 			return passert( ( $timeout > $difference ), "Server shutdown in: " . ( $timeout - $difference ) . " sec" );

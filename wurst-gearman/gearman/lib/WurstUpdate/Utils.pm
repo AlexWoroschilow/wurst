@@ -4,7 +4,7 @@ use warnings;
 use POSIX;
 use File::Slurp;
 use Exporter qw(import);
-use WurstUpdate::Assert qw(dassert wassert);
+use Assert qw(dassert wassert);
 use File::Copy;
 
 our @EXPORT_OK =
@@ -132,13 +132,13 @@ sub pdb_path_get ($ $ $ @) {
 sub pdb_write_bin ($) {
 	my ($options) = @_;
 
-#	dassert( ( my $source      = $options->{source} ),      "Source can not be empty" );
-#	dassert( ( my $source_top  = $options->{source_top} ),  "Source top can not be empty" );
-#	dassert( ( my $destination = $options->{destination} ), "Destination can not be empty" );
-#	dassert( ( my $code        = lc( $options->{code} ) ),  "Protein code can not be empty" );
-#	dassert( ( my $chain       = $options->{chain} ),       "Protein chain can not be empty" );
-#	dassert( ( my $minsize     = $options->{minsize} ),     "Minimal size can not be empty" );
-#	dassert( ( my @gunzip      = $options->{gunzip} ),      "G unzip should not be empty" );
+	dassert( length( my $source      = $options->{src} ),        "Source can not be empty" );
+	dassert( length( my $source_top  = $options->{top} ),        "Source top can not be empty" );
+	dassert( length( my $destination = $options->{dst} ),        "Destination can not be empty" );
+	dassert( length( my $code        = lc( $options->{code} ) ), "Protein code can not be empty" );
+	dassert( length( my $chain       = $options->{chain} ),      "Protein chain can not be empty" );
+	dassert( ( my $minsize = $options->{min} ),  "Minimal size can not be empty" );
+	dassert( ( my @gunzip  = $options->{uzip} ), "G unzip should not be empty" );
 #
 #	return 0 if !wassert( ( my $path = get_pdb_path( $code, $source, $source_top, @gunzip ) ), "Pdb file not found in: $source" );
 #	return 0 if !wassert( ( my $r = pdb_read( $path, $code, $chain ) ), "Can not read pdb coordinates" );

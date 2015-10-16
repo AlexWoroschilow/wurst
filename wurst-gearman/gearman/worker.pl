@@ -13,7 +13,7 @@ use Storable qw( freeze );
 use List::Util qw( sum );
 use Getopt::Lucid qw( :all );
 use File::Slurp;
-use WurstUpdate::Assert qw(dassert wassert passert);
+use Assert qw(dassert wassert passert);
 use WurstUpdate::Utils qw(pdb_write_bin);
 
 use Data::Dump qw( dump pp );
@@ -40,39 +40,32 @@ $worker->job_servers( read_file( $opt->get_configfile ) );
 
 my $json = JSON->new;
 
+my $time = int(time);
+
 # Define worker function to convert cluster
 # of pdb structures to binary files
-$worker->register_function( "cluster_to_bin" => sub {
-		my ( $cluster_ref, $chain_ref, $src, $top, $dst, $min ) = @{ $json->decode( $_[0]->arg ) };
-		dassert( ( my @chain   = @{$chain_ref} ),   "Cluster can not be empty" );
-		dassert( ( my @cluster = @{$cluster_ref} ), "Cluster can not be empty" );
-
-		for ( my $i = 0 ; $i < @cluster ; $i++ ) {
-			print "Fail: $cluster[$i]\n" if !pdb_write_bin( {
-					'source'      => $src,
-					'source_top'  => $top,
-					'destination' => $dst,
-					'code'        => $cluster[$i],
-					'chain'       => $chain[$i],
-					'minsize'     => $min,
-					'gunzip'      => [],
-			} );
-		}
+$worker->register_function( "pdb_to_bin" => sub {
+		my ( $pdb, $chain, $src, $top, $dst, $min ) = @{ $json->decode( $_[0]->arg ) };
+		pdb_write_bin( {
+				'src'  => $src, 'top'   => $top,   'dst' => $dst,
+				'code' => $pdb, 'chain' => $chain, 'min' => $min,
+				'uzip' => ['/usr/bin/gunzip', '-f' ],
+		} );
 } );
 
 # Define worker function to convert
 # single pdb structure to vector file
-$worker->register_function( "bin_to_vec" => sub {
-		my ( $pdb, $src, $top, $dst ) = @{ $json->decode( $_[0]->arg ) };
-
-} );
+#$worker->register_function( "bin_to_vec" => sub {
+#		my ( $pdb, $src, $top, $dst ) = @{ $json->decode( $_[0]->arg ) };
+#
+#} );
 
 #
 $started = time();
-$worker->work(
-	'stop_if' => sub {
+$worker->work( 'stop_if' => sub {
 		my ( $is_idle, $last_job_time ) = @_;
-		my ( $timeout, $requestred, $difference, $alive );
+		my ( $timeout, $requestred, $difference, $should_die );
+
 		passert( $is_idle, "Worker is idle" );
 
 		$timeout    = $opt->get_timeout1;
@@ -89,10 +82,10 @@ $worker->work(
 		}
 		$difference = $requestred - $started;
 
-		$alive = $is_idle && $difference > $timeout;
+		$should_die = $is_idle && $difference > $timeout;
+
 		# This process should be shutted down only
 		# if there are not tasks for current worker
-		return passert( $alive, "Worker shutted down by timeout: $timeout" );
-	  }
-);
+		return passert( $should_die, "Worker shutted down by timeout: $timeout" );
+} );
 
