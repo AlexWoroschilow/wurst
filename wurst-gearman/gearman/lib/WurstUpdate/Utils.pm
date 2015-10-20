@@ -4,8 +4,15 @@ use warnings;
 use POSIX;
 use File::Slurp;
 use Exporter qw(import);
-use Assert qw(dassert wassert);
+use Assert qw(dassert wassert passert);
 use File::Copy;
+#use lib "/home/other/wurst/salamiServer/v02";
+#use Salamisrvini;
+
+#use lib $LIB_LIB;     #initialize in local Salamisrvini.pm;
+#use lib $LIB_ARCH;    #initialize in local Salamisrvini.pm;
+
+#use Wurst;
 
 our @EXPORT_OK =
   qw(file_line_each file_write_silent cluster_read_to cluster_each pdb_write_bin)
@@ -94,58 +101,65 @@ sub cluster_each ($ $ $) {
 	}
 }
 
+# ----------------------- check_seq   -------------------------------
+# Our pdb reader replaces unknown residues with alanines. Mostly this
+# is OK. If, however, we see more than 50 % alanine residues, we
+# get suspicious and return EXIT_FAILURE
+sub check_seq ( $ ) {
+	my $r     = shift;
+	my $seq   = coord_get_seq($r);
+	my $size  = seq_size($seq);
+	my $s     = seq_print($seq);     # Turn sequence into perl string
+	my $n_ala = ( $s =~ tr/a// );    # count alanines
+	my $frac  = $n_ala / $size;      # Fraction of sequence which is alanine
+	return $frac < 0.5;
+}
+
 # ----------------------- get_pdb_path ------------------------------
 # This returns a path to a *copied* and uncompressed version of the
 # pdb file..
 # The caller should delete the file when finished.
-sub pdb_path_get ($ $ $ @) {
-	my ( $acq, $source, $source_top, @gunzip ) = @_;
+sub get_pdb_path ($ $ $) {
+	my ( $acq, $src1, $src2 ) = @_;
 	$acq = lc($acq);
 	if ( ( $acq eq '1cyc' ) || ( $acq eq '1aut' ) ) {
-
-		#		$DB::single = 1;
+#		$DB::single = 1;
 	}
 	my $two_lett = substr( $acq, 1, 2 );
-	my $path = "$source_top/$two_lett/pdb${acq}.ent.gz";
-	if ( !( -f $path ) ) {
-		print STDERR "$path not found\n";
-		return (undef);
-	}
-	my $tmppath = "$source/pdb${acq}.ent.gz";
-	if ( !( copy( $path, $tmppath ) ) ) {
-		warn "copy of $acq failed\n";
-		return undef;
-	}
-	my $r = system( @gunzip, $tmppath );
-	if ( $r != 0 ) {
-		warn "gunzip failed on $tmppath\n";
-		return undef;
-	}
+	my $path = "$src1/$two_lett/pdb${acq}.ent.gz";
+	return (undef) if !wassert( ( -f $path ), "$path not found" );
+
+	my $tmppath = "$src2/pdb${acq}.ent.gz";
+	return (undef) if !wassert( ( copy( $path, $tmppath ) ), "$path not found" );
+
+	my $r = system( ( "/usr/bin/gunzip", "--force", $tmppath ) );
+	return (undef) if !wassert( ( $r == 0 ), "Gunzip failed on $tmppath" );
+
 	$tmppath =~ s/\.gz$//;
-	if ( !-f ($tmppath) ) {
-		warn "Lost uncompressed file $tmppath\n";
-		return undef;
-	}
+	return (undef) if !wassert( ( -f ($tmppath) ), "Lost uncompressed file $tmppath" );
+
 	return $tmppath;
 }
 
 sub pdb_write_bin ($) {
 	my ($options) = @_;
 
-	dassert( length( my $source      = $options->{src} ),        "Source can not be empty" );
-	dassert( length( my $source_top  = $options->{top} ),        "Source top can not be empty" );
-	dassert( length( my $destination = $options->{dst} ),        "Destination can not be empty" );
-	dassert( length( my $code        = lc( $options->{code} ) ), "Protein code can not be empty" );
-	dassert( length( my $chain       = $options->{chain} ),      "Protein chain can not be empty" );
-	dassert( ( my $minsize = $options->{min} ),  "Minimal size can not be empty" );
-	dassert( ( my @gunzip  = $options->{uzip} ), "G unzip should not be empty" );
-#
-#	return 0 if !wassert( ( my $path = get_pdb_path( $code, $source, $source_top, @gunzip ) ), "Pdb file not found in: $source" );
-#	return 0 if !wassert( ( my $r = pdb_read( $path, $code, $chain ) ), "Can not read pdb coordinates" );
-#	return 0 if !wassert( ( ( my $c_size = coord_size($r) ) > $minsize ), "To small" );
-#	return 0 if !wassert( ( seq_size( coord_get_seq($r) ) == $c_size ), "Sizes are different" );
-#	return 0 if !wassert( ( check_seq($r) != EXIT_FAILURE ),            "Coordinates check failure" );
-#	return 0 if !wassert( coord_2_bin( $r, "$destination/$code$chain.bin" ), "Can not write bin file: $destination/$code$chain.bin" );
-#	return 0 if !wassert( unlink($path), "Deleting $path failed" );
+	dassert( length( my $src  = $options->{src} ),       "Source can not be empty" );
+	dassert( length( my $tmp  = $options->{tmp} ),       "Source top can not be empty" );
+	dassert( length( my $dst   = $options->{dst} ),        "Destination can not be empty" );
+	dassert( length( my $code  = lc( $options->{code} ) ), "Protein code can not be empty" );
+	dassert( length( my $chain = $options->{chain} ),      "Protein chain can not be empty" );
+	dassert( ( my $min = $options->{min} ), "Minimal size can not be empty" );
+
+	my $file = "$dst/$code$chain.bin";
+
+	return 0 if !wassert( ( my $path = get_pdb_path( $code, $src, $tmp ) ), "[$code] Pdb file not found in: $src" );
+	return 0 if !wassert( ( my $read = pdb_read( $path, $code, $chain ) ), "[$code] Can not read pdb coordinates" );
+	return 0 if !wassert( ( ( my $c_size = coord_size($read) ) > $min ), "[$code] To small" );
+	return 0 if !wassert( ( seq_size( coord_get_seq($read) ) == $c_size ), "[$code] Sizes are different" );
+	return 0 if !wassert( check_seq($read), "[$code]Coordinates check failure" );
+	return 1 if passert( ( -f $file ), "[$code] Binary file does not exists" );
+	return 0 if !wassert( coord_2_bin( $read, $file ), "Can not write bin file: $file" );
+	return 0 if !wassert( unlink($path), "[$code] Deleting $path failed" );
 	return 1;
 }

@@ -103,9 +103,10 @@ use Gearman::Util;
 use Sys::Hostname;
 use Gearman::Server;
 use IO::Socket::INET;
+use Log::Log4perl;
 use Danga::Socket 1.52;
 use Getopt::Lucid qw( :all );
-use Assert qw(dassert wassert passert);
+use Assert qw(dassert passert);
 use WurstUpdate::Utils qw(file_write_silent);
 
 our $graceful_shutdown = 0;
@@ -122,34 +123,47 @@ my @specs = (
 	Param("--wakeup_delay")->default(1)->valid(qr/\d+/),
 	Param("--timeout")->default(20)->valid(qr/\d+/),
 	Param("--configfile")->default("$FindBin::Bin/../input/server.conf"),
+	Param("--configlog")->default("$FindBin::Bin/../input/logger.conf"),
+
 );
 
 # Parse and validate given parameters
 my $opt = Getopt::Lucid->getopt( \@specs );
 $opt->validate( { 'requires' => [] } );
 
-dassert( ( my $host       = $opt->get_host ),       "Host should be defined" );
-dassert( ( my $port       = $opt->get_port ),       "Port should be defined" );
-dassert( ( my $accept     = $opt->get_accept ),     "Accept number should be defined" );
-dassert( ( my $wakeup     = $opt->get_wakeup ),     "Wake up number should be defined" );
-dassert( ( my $configfile = $opt->get_configfile ), "Config file should be defined" );
-dassert( ( my $timeout    = $opt->get_timeout ),    "Server shutdown timeout can not be empty" );
+dassert( ( my $configserver = $opt->get_configfile ), "Config file should be defined" );
+dassert( ( my $configloger  = $opt->get_configlog ),  "File with server config should not be empty" );
+dassert( ( my $host         = $opt->get_host ),       "Host should be defined" );
+dassert( ( my $port         = $opt->get_port ),       "Port should be defined" );
+dassert( ( my $accept       = $opt->get_accept ),     "Accept number should be defined" );
+dassert( ( my $wakeup       = $opt->get_wakeup ),     "Wake up number should be defined" );
+dassert( ( my $timeout      = $opt->get_timeout ),    "Server shutdown timeout can not be empty" );
 passert( ( my $pidfile = $opt->get_pidfile ), "Pidfile given" );
+
+Log::Log4perl->init($configloger);
+my $log = Log::Log4perl->get_logger("Wurst::Update::Server");
+
+$log->info("Config server: $configserver");
+$log->info("Config logger: $configloger");
+$log->info("Host: $host");
+$log->info("Port: $port");
+$log->info("Timeout: $timeout");
 
 # Write server settings wor workers
 # this resource should be available for all workers
 # they whould get a server settings to connect
-file_write_silent( $configfile,       $host . ":" . int($port) );
+file_write_silent( $configserver,     $host . ":" . int($port) );
 file_write_silent( $opt->get_pidfile, "$$\n" );
 
 # handled manually, so just ignore
 $SIG{'PIPE'} = "IGNORE";
 
-my $server = Gearman::Server->new( 'wakeup' => int( $opt->get_wakeup ),
-	'wakeup_delay' => int( $opt->get_wakeup_delay ), );
+my $server = Gearman::Server->new(
+	'wakeup'       => int( $opt->get_wakeup ),
+	'wakeup_delay' => int( $opt->get_wakeup_delay ),
+);
 
-my $ssock = $server->create_listening_sock( int($port),
-	'accept_per_loop' => int($accept) );
+my $ssock = $server->create_listening_sock( int($port), 'accept_per_loop' => int($accept) );
 
 sub shutdown_graceful {
 	if ($graceful_shutdown) {
@@ -170,12 +184,18 @@ sub shutdown_if_calm {
 }
 
 my $started = time;
-Danga::Socket->SetLoopTimeout(500);
+Danga::Socket->SetLoopTimeout(1000);
 Danga::Socket->SetPostLoopCallback( sub {
+		$log->debug("Server have no jobs")    if !$server->jobs;
+		$log->debug("Server have no clients") if !$server->clients;
 		if ( !$server->jobs && !$server->clients ) {
 			my $current    = time;
 			my $difference = $current - $started;
-			return passert( ( $timeout > $difference ), "Server shutdown in: " . ( $timeout - $difference ) . " sec" );
+			my $should_die = $timeout < $difference;
+
+			$log->info( "Shutdown in: ", ( $timeout - $difference ) );
+			$log->info("Shutdown") if $should_die;
+			return !$should_die;
 		}
 		$started = time;
 		return 1;
